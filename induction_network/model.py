@@ -29,7 +29,7 @@ class InductionModel(object):
         self.init_saver()
 
     def model_structure(self):
-        # embedding layer
+        # embedding layer 注意这里用了个预训练的词向量做输入
         with tf.name_scope("embedding"):
             # Initialization of Word Embedding Matrix Using Pre-trained Word Vectors
             if self.word_vectors is not None:
@@ -39,15 +39,15 @@ class InductionModel(object):
                 embedding_w = tf.get_variable("embedding_w", shape=[self.vocab_size, self.config["embedding_size"]],
                                               initializer=tf.random_normal_initializer())
 
-            # support embedding. dimension: [num_classes, num_support, sequence_length, embedding_size]
+            # support embedding. dimension: [num_classes, num_support, sequence_length, embedding_size] #支撑数据转化为词向量【支撑类别个数，每个类别样本数，每个样本数的token数，每个token的词向量维数】
             support_embedded = tf.nn.embedding_lookup(embedding_w, self.support, name="support_embedded")
-            # query embedding. dimension: [num_classes * num_queries, sequence_length, embedding_size]
+            # query embedding. dimension: [num_classes * num_queries, sequence_length, embedding_size] #查询数据转化位词向量【查询类别个数×查询个数，每个样本数的token数，每个token的词向量维数】
             queries_embedded = tf.nn.embedding_lookup(embedding_w, self.queries, name="queries_embedded")
 
-            # reshape support set to 3 dimensions. [num_classes * num_support, sequence_length, embedding_size]
+            # reshape support set to 3 dimensions. [num_classes * num_support, sequence_length, embedding_size] # 将支撑集的前两项合并
             support_embedded_reshape = tf.reshape(support_embedded,
-                                                  [-1, self.config["sequence_length"], self.config["embedding_size"]])
-
+                                                  [-1, self.config["sequence_length"], self.config["embedding_size"]])  #  注意这个序列长度统一长100
+        # 分别对支撑集和查询集进行双向LSTM编码，编码印象两设置位128
         with tf.name_scope("Bi-LSTM"):
             for idx, hidden_size in enumerate(self.config["hidden_sizes"]):
                 with tf.name_scope("Bi-LSTM" + str(idx)):
@@ -96,22 +96,22 @@ class InductionModel(object):
             scores = self.neural_tensor_layer(support_class, queries_final_output)
             self.scores = scores
             self.predictions = tf.argmax(scores, axis=-1, name="predictions")
-
+        # 计算损失函数
         with tf.name_scope("loss"):
             labels_one_hot = tf.one_hot(self.labels, self.num_classes, dtype=tf.float32)
             losses = tf.losses.mean_squared_error(labels=labels_one_hot, predictions=scores)
             l2_losses = tf.add_n(
                 [tf.nn.l2_loss(v)
-                 for v in tf.trainable_variables() if 'bias' not in v.name]) * self.config["l2_reg_lambda"]
-            self.loss = losses + l2_losses
-
+                 for v in tf.trainable_variables() if 'bias' not in v.name]) * self.config["l2_reg_lambda"]   # 如果可训练参数都不带"bias"偏移
+            self.loss = losses + l2_losses  # 损失+l2正则项
+        # 梯度更新
         with tf.name_scope("train_op"):
             # define optimizer
             optimizer = self.get_optimizer()
 
             trainable_params = tf.trainable_variables()
             gradients = tf.gradients(self.loss, trainable_params)
-            # gradient clip
+            # gradient clip  剪枝
             clip_gradients, _ = tf.clip_by_global_norm(gradients, self.config["max_grad_norm"])
             self.train_op = optimizer.apply_gradients(zip(clip_gradients, trainable_params))
 
@@ -127,18 +127,18 @@ class InductionModel(object):
         num_support = self.config["num_support"]
         encode_size = self.config["hidden_sizes"][-1] * 2
 
-        # init dynamic routing values, weights of samples per class. [num_classes, num_support]
+        # init dynamic routing values, weights of samples per class. [num_classes, num_support] 初始化动态路由表，其为每个类别样本的权重，[num_classes, num_support]
         init_b = tf.constant(0.0, dtype=tf.float32, shape=[num_classes, num_support])
 
-        # transformer matrix, mapping input to another space. [encode_size, encode_size]
+        # transformer matrix, mapping input to another space. [encode_size, encode_size]  转移矩阵，将输入映射到其它空间， [encode_size, encode_size]
         w_s = tf.get_variable("w_s", shape=[encode_size, encode_size], dtype=tf.float32,
                               initializer=tf.glorot_uniform_initializer())
 
-        # Iterating to update dynamic routing values
+        # Iterating to update dynamic routing values 循环更新动态路由表，默认是迭代3次
         for r_iter in range(iter_routing):
             with tf.variable_scope('iter_' + str(r_iter)):
                 # normalization dynamic routing values. [num_classes, num_support, 1]
-                norm_b = tf.nn.softmax(tf.reshape(init_b, [num_classes, num_support, 1]), axis=1)
+                norm_b = tf.nn.softmax(tf.reshape(init_b, [num_classes, num_support, 1]), axis=1)  # todo:此处的soft不是很理解
                 # mapping support to another space. [num_classes, num_support, encoder_size]
                 support_trans = tf.reshape(tf.matmul(tf.reshape(support_encoding, [-1, encode_size]), w_s),
                                            [num_classes, num_support, encode_size])
@@ -206,7 +206,7 @@ class InductionModel(object):
 
     def _attention(self, H, scope_name):
         """
-        attention for the final output of Lstm
+        attention for the final output of Lstm lstm编码之后用attention
         :param H: [batch_size, sequence_length, hidden_size * 2]
         """
         with tf.variable_scope(scope_name):
@@ -218,7 +218,7 @@ class InductionModel(object):
             w_2 = tf.Variable(tf.random_normal([attention_size], stddev=0.1))
 
             # Nonlinear conversion for LSTM output, [batch_size * sequence_length, attention_size]
-            M = tf.tanh(tf.matmul(tf.reshape(H, [-1, hidden_size]), w_1))
+            M = tf.tanh(tf.matmul(tf.reshape(H, [-1, hidden_size]), w_1))  # 这里构建64维的查询向量
 
             # calculate weights, [batch_size, sequence_length]
             weights = tf.reshape(tf.matmul(M, tf.reshape(w_2, [-1, 1])),

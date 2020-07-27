@@ -92,7 +92,7 @@ class InductionData(object):
         all_words = []
         for category, category_data in data.items():
             for sentiment, sentiment_data in category_data.items():
-                all_words.extend(list(chain(*sentiment_data)))
+                all_words.extend(list(chain(*sentiment_data)))  # 所有单词都链接到一起
         word_count = Counter(all_words)  # statistic the frequency of words
         sort_word_count = sorted(word_count.items(), key=lambda x: x[1], reverse=True)
 
@@ -124,8 +124,8 @@ class InductionData(object):
                 line_list = line.strip().split(" ")
                 glove_vector[line_list[0]] = line_list[1:]
 
-        for i in range(1, len(vocab)):
-            if glove_vector.get(vocab[i], None):
+        for i in range(1, len(vocab)):  # 注意这里是从1开始，0是<pad>
+            if glove_vector.get(vocab[i], None):  # 如果word_vectors存在
                 word_vectors[i, :] = glove_vector[vocab[i]]
             else:
                 print(vocab[i] + " not exist word vector file")
@@ -143,7 +143,7 @@ class InductionData(object):
         #     except:
         #         print(vocab[i] + "not exist word vector file")
 
-        return word_vectors
+        return word_vectors  # 实测42546个单词，原始是
 
     def gen_vocab(self, words: List[str]) -> Dict[str, int]:
         """
@@ -202,27 +202,27 @@ class InductionData(object):
 
         pos_samples = task_data["1"]
         neg_samples = task_data["-1"]
-        pos_support = random.sample(pos_samples, self.__num_support)
-        neg_support = random.sample(neg_samples, self.__num_support)
+        pos_support = random.sample(pos_samples, self.__num_support)  # 从正例中随机抽出5个样本
+        neg_support = random.sample(neg_samples, self.__num_support)  # 从负例中随机抽出5个样本
 
-        pos_others = copy.copy(pos_samples)
+        pos_others = copy.copy(pos_samples)  # 将抽出来的样本移除
         [pos_others.remove(data) for data in pos_support]
 
-        neg_others = copy.copy(neg_samples)
+        neg_others = copy.copy(neg_samples)  # 将抽出来的样本移除
         [neg_others.remove(data) for data in neg_support]
 
-        pos_query = random.sample(pos_others, self.__num_queries)
-        neg_query = random.sample(neg_others, self.__num_queries)
+        pos_query = random.sample(pos_others, self.__num_queries)  # 从剩余样本中抽去正类样本5个样本
+        neg_query = random.sample(neg_others, self.__num_queries)  # 从剩余样本中抽去负类样本5个样本
 
-        # padding
+        # padding 补零操作
         pos_support = self.padding(pos_support)
         neg_support = self.padding(neg_support)
         pos_query = self.padding(pos_query)
         neg_query = self.padding(neg_query)
 
-        support_set = [pos_support, neg_support]  # [num_classes, num_support, sequence_length]
-        query_set = pos_query + neg_query  # [num_classes * num_queries, sequence_length]
-        labels = [label_to_index["1"]] * len(pos_query) + [label_to_index["-1"]] * len(neg_query)
+        support_set = [pos_support, neg_support]  # [num_classes, num_support, sequence_length]构建支撑集
+        query_set = pos_query + neg_query  # [num_classes * num_queries, sequence_length]构建正负样本集
+        labels = [label_to_index["1"]] * len(pos_query) + [label_to_index["-1"]] * len(neg_query)  # 构建标签集
 
         return support_set, query_set, labels
 
@@ -234,17 +234,17 @@ class InductionData(object):
         :return:
         """
         # product name list
-        category_list = list(data_ids.keys())
+        category_list = list(data_ids.keys())  # 56个类别
 
         tasks = []
         if self.__is_training:
             num_tasks = self.__num_tasks
         else:
             num_tasks = self.__num_eval_tasks
-        for i in range(num_tasks):
+        for i in range(num_tasks):  #　先备好１０００组随机抽的支撑集和查询集
             # randomly choice a category to construct train sample
             support_category = random.choice(category_list)
-            support_set, query_set, labels = self.choice_support_query(data_ids[support_category])
+            support_set, query_set, labels = self.choice_support_query(data_ids[support_category])  # 这里是重点，寻找支撑集和查询集以及相应的标签
             tasks.append(dict(support=support_set, queries=query_set, labels=labels))
         return tasks
 
@@ -281,7 +281,7 @@ class InductionData(object):
         :return:
         """
 
-        tasks = self.samples(data_ids)
+        tasks = self.samples(data_ids)  # 原始56组数据
 
         for task in tasks:
             yield task

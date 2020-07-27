@@ -63,7 +63,7 @@ class InductionTrainer(object):
             sess.run(tf.global_variables_initializer())
             current_step = 0
 
-            for epoch in range(self.config["epochs"]):
+            for epoch in range(self.config["epochs"]):  # 默认
                 print("----- Epoch {}/{} -----".format(epoch + 1, self.config["epochs"]))
                 for batch in self.train_data_obj.next_batch(self.train_data):
                     loss, predictions = self.model.train(sess, batch, self.config["keep_prob"])
